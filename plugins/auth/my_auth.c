@@ -63,45 +63,45 @@ auth_plugin_t mysql_native_password_client_plugin=
 /**
   Checks if self-signed certificate error should be ignored.
 */
-static my_bool is_local_connection(MARIADB_PVIO *pvio)
-{
-  const char *hostname= pvio->mysql->host;
-  const char *local_host_names[]= {
-#ifdef _WIN32
-  /*
-   On Unix, we consider TCP connections with "localhost"
-   an insecure transport, for the single reason to run tests for
-   insecure transport on CI.This is artificial, but should be ok.
-   Default client connections use unix sockets anyway, so it
-   would not hurt much.
-
-   On Windows, the situation is quite different.
-   Default connections type is TCP, default host name is "localhost",
-   non-password plugin gssapi is common (every installation)
-   In this environment, there would be a lot of faux/disruptive
-   "self-signed certificates" errors there. Thus, "localhost" TCP
-   needs to be considered secure transport.
-  */
-  "localhost",
-#endif
-  "127.0.0.1", "::1", NULL};
-  int i;
-
-  if (pvio->type != PVIO_TYPE_SOCKET)
-  {
-    return TRUE;
-  }
-  if (!hostname)
-    return FALSE;
-  for (i= 0; local_host_names[i]; i++)
-  {
-    if (strcmp(hostname, local_host_names[i]) == 0)
-    {
-      return TRUE;
-    }
-  }
-  return FALSE;
-}
+// static my_bool is_local_connection(MARIADB_PVIO *pvio)
+// {
+//   const char *hostname= pvio->mysql->host;
+//   const char *local_host_names[]= {
+// #ifdef _WIN32
+//   /*
+//    On Unix, we consider TCP connections with "localhost"
+//    an insecure transport, for the single reason to run tests for
+//    insecure transport on CI.This is artificial, but should be ok.
+//    Default client connections use unix sockets anyway, so it
+//    would not hurt much.
+//
+//    On Windows, the situation is quite different.
+//    Default connections type is TCP, default host name is "localhost",
+//    non-password plugin gssapi is common (every installation)
+//    In this environment, there would be a lot of faux/disruptive
+//    "self-signed certificates" errors there. Thus, "localhost" TCP
+//    needs to be considered secure transport.
+//   */
+//   "localhost",
+// #endif
+//   "127.0.0.1", "::1", NULL};
+//   int i;
+//
+//   if (pvio->type != PVIO_TYPE_SOCKET)
+//   {
+//     return TRUE;
+//   }
+//   if (!hostname)
+//     return FALSE;
+//   for (i= 0; local_host_names[i]; i++)
+//   {
+//     if (strcmp(hostname, local_host_names[i]) == 0)
+//     {
+//       return TRUE;
+//     }
+//   }
+//   return FALSE;
+// }
 
 
 static int native_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
@@ -862,13 +862,15 @@ retry:
     MA_HASH_CTX *ctx = NULL;
     unsigned char buf[1024], digest[MA_SHA256_HASH_SIZE];
     char fp[128], hexdigest[sizeof(digest)*2+1], *hexsig= mysql->info + 1;
-    size_t buflen= sizeof(buf) - 1, fplen;
+    size_t buflen= sizeof(buf) - 1, fplen = 0;
 
     mysql->info= NULL; /* no need to confuse the client with binary info */
 
+#ifdef HAVE_TLS
     if (!(fplen= ma_tls_get_finger_print(mysql->net.pvio->ctls, MA_HASH_SHA256,
                                          fp, sizeof(fp))))
       return 1; /* error is already set */
+#endif
 
     if (auth_plugin->hash_password_bin(mysql, buf, &buflen) ||
         !(ctx= ma_hash_new(MA_HASH_SHA256)))
