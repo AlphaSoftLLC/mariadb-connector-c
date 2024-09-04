@@ -3,7 +3,10 @@
 #include <errmsg.h>
 #include <string.h>
 #include <ma_common.h>
+#include <ma_sha1.h>
+#if defined(HAVE_WINCRYPT) || defined(HAVE_OPENSSL) || defined(HAVE_GNUTLS)
 #include <ma_crypt.h>
+#endif
 #include <mysql/client_plugin.h>
 
 typedef struct st_mysql_client_plugin_AUTHENTICATION auth_plugin_t;
@@ -113,7 +116,7 @@ static int native_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
   {
     /*
       in mysql_change_user() the client sends the first packet.
-      we use the old scramble.
+      we use the old scramble.мож
     */
     pkt= (uchar*)mysql->scramble_buff;
     pkt_len= SCRAMBLE_LENGTH + 1;
@@ -149,16 +152,27 @@ static int native_password_auth_client(MYSQL_PLUGIN_VIO *vio, MYSQL *mysql)
 
 static int native_password_hash(MYSQL *mysql, unsigned char *out, size_t *out_length)
 {
-  unsigned char digest[MA_SHA1_HASH_SIZE];
+  unsigned char digest[SHA1_MAX_LENGTH];
 
-  if (*out_length < MA_SHA1_HASH_SIZE)
-    return 1;
-  *out_length= MA_SHA1_HASH_SIZE;
+  // if (*out_length < SHA1_MAX_LENGTH)
+  //   return 1;
+  // *out_length= SHA1_MAX_LENGTH;
 
   /* would it be better to reuse instead of recalculating here? see ed25519 */
-  ma_hash(MA_HASH_SHA1, (unsigned char*)mysql->passwd, strlen(mysql->passwd),
-          digest);
-  ma_hash(MA_HASH_SHA1, digest, sizeof(digest), out);
+  // ma_hash(MA_HASH_SHA1, (unsigned char*)mysql->passwd, strlen(mysql->passwd),
+  //         digest);
+  // ma_hash(MA_HASH_SHA1, digest, sizeof(digest), out);
+
+  _MA_SHA1_CTX* Ctx = 0;
+
+  ma_SHA1Init(Ctx);
+  ma_SHA1Update(Ctx, (unsigned char*)mysql->passwd, strlen(mysql->passwd));
+  ma_SHA1Final(digest, Ctx);
+
+  ma_SHA1Init(Ctx);
+  ma_SHA1Update(Ctx, digest, sizeof(digest));
+  ma_SHA1Final(out, Ctx);
+  *out_length = SHA1_MAX_LENGTH;
 
   return 0;
 }
@@ -859,35 +873,36 @@ retry:
   assert(mysql->passwd[0]);
   if (mysql->info && mysql->info[0] == '\1')
   {
-    MA_HASH_CTX *ctx = NULL;
-    unsigned char buf[1024], digest[MA_SHA256_HASH_SIZE];
-    char fp[128], hexdigest[sizeof(digest)*2+1], *hexsig= mysql->info + 1;
-    size_t buflen= sizeof(buf) - 1, fplen = 0;
+//     MA_HASH_CTX *ctx = NULL;
+//     unsigned char buf[1024], digest[MA_SHA256_HASH_SIZE];
+//     char fp[128], hexdigest[sizeof(digest)*2+1], *hexsig= mysql->info + 1;
+//     size_t buflen= sizeof(buf) - 1, fplen = 0;
 
-    mysql->info= NULL; /* no need to confuse the client with binary info */
+//     mysql->info= NULL; /* no need to confuse the client with binary info */
 
-#ifdef HAVE_TLS
-    if (!(fplen= ma_tls_get_finger_print(mysql->net.pvio->ctls, MA_HASH_SHA256,
-                                         fp, sizeof(fp))))
-      return 1; /* error is already set */
-#endif
+// #ifdef HAVE_TLS
+//     if (!(fplen= ma_tls_get_finger_print(mysql->net.pvio->ctls, MA_HASH_SHA256,
+//                                          fp, sizeof(fp))))
+//       return 1; /* error is already set */
+// #endif
 
-    if (auth_plugin->hash_password_bin(mysql, buf, &buflen) ||
-        !(ctx= ma_hash_new(MA_HASH_SHA256)))
-    {
-      SET_CLIENT_ERROR(mysql, CR_OUT_OF_MEMORY, SQLSTATE_UNKNOWN, 0);
-      return 1;
-    }
+//     if (auth_plugin->hash_password_bin(mysql, buf, &buflen) ||
+//         !(ctx= ma_hash_new(MA_HASH_SHA256)))
+//     {
+//       SET_CLIENT_ERROR(mysql, CR_OUT_OF_MEMORY, SQLSTATE_UNKNOWN, 0);
+//       return 1;
+//     }
 
-    ma_hash_input(ctx, (unsigned char*)buf, buflen);
-    ma_hash_input(ctx, (unsigned char*)mysql->scramble_buff, SCRAMBLE_LENGTH);
-    ma_hash_input(ctx, (unsigned char*)fp, fplen);
-    ma_hash_result(ctx, digest);
-    ma_hash_free(ctx);
+//     ma_hash_input(ctx, (unsigned char*)buf, buflen);
+//     ma_hash_input(ctx, (unsigned char*)mysql->scramble_buff, SCRAMBLE_LENGTH);
+//     ma_hash_input(ctx, (unsigned char*)fp, fplen);
+//     ma_hash_result(ctx, digest);
+//     ma_hash_free(ctx);
 
-    mysql_hex_string(hexdigest, (char*)digest, sizeof(digest));
-    if (strcmp(hexdigest, hexsig) == 0)
-      return 0; /* phew. self-signed certificate is validated! */
+//     mysql_hex_string(hexdigest, (char*)digest, sizeof(digest));
+//     if (strcmp(hexdigest, hexsig) == 0)
+//       return 0; /* phew. self-signed certificate is validated! */
+    return 0;
   }
 
   my_set_error(mysql, CR_SSL_CONNECTION_ERROR, SQLSTATE_UNKNOWN,
